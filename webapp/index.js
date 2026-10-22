@@ -43,8 +43,9 @@ app.get('/user', (req, res) => {
             res.render('user', data);        
         })
         .catch(err => {
-            console.error('Query failed:', err.message);
-            res.status(500).send('Database error: ' + err.message);
+            const detail = err.message || (err.errors || []).map(e => e.code + ' ' + e.address + ':' + e.port).join(', ') || err.code || String(err);
+            console.error('Query failed:', err);
+            res.status(500).send('Database error: ' + detail);
         });
 });
 
