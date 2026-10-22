@@ -41,6 +41,10 @@ app.get('/user', (req, res) => {
             const data = {teammembers: teammembers};
             console.log(teammembers);
             res.render('user', data);        
+        })
+        .catch(err => {
+            console.error('Query failed:', err.message);
+            res.status(500).send('Database error: ' + err.message);
         });
 });
 
