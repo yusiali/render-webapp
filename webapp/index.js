@@ -4,7 +4,7 @@ const dotenv = require('dotenv').config();
 
 // Create express app
 const app = express();
-const port = 3000;
+const port = process.env.PORT || 3000;
 
 // Create pool
 const pool = new Pool({
@@ -26,7 +26,7 @@ process.on('SIGINT', function() {
 app.set("view engine", "ejs");
 
 app.get('/', (req, res) => {
-    const data = {name: 'Mario'};
+    const data = {name: 'Yusuf'};
     res.render('index', data);
 });
 
