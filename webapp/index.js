@@ -6,6 +6,9 @@ const dotenv = require('dotenv').config();
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Log which database variables are set (names only, never values)
+console.log('DB env set:', ['PSQL_HOST','PSQL_USER','PSQL_DATABASE','PSQL_PASSWORD','PSQL_PORT'].map(k => k + '=' + (process.env[k] ? 'yes' : 'NO')).join(' '));
+
 // Create pool
 const pool = new Pool({
     user: process.env.PSQL_USER,
@@ -45,7 +48,7 @@ app.get('/user', (req, res) => {
         .catch(err => {
             const detail = err.message || (err.errors || []).map(e => e.code + ' ' + e.address + ':' + e.port).join(', ') || err.code || String(err);
             console.error('Query failed:', err);
-            res.status(500).send('Database error: ' + detail);
+            res.status(500).send('Database error: ' + detail + ' | host set: ' + (process.env.PSQL_HOST ? 'yes' : 'NO'));
         });
 });
 
