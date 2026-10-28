@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cashier</title>
+<style>
+  * { box-sizing: border-box; touch-action: manipulation; user-select: none; }
+  body { margin: 0; font-family: sans-serif; display: flex; height: 100vh; background: #f4f1ec; }
+  #menu { flex: 1; display: flex; flex-direction: column; padding: 10px; min-width: 0; }
+  #cats { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  #grid { flex: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; align-content: start; }
+  button { font-size: 18px; border: 0; border-radius: 10px; padding: 14px; cursor: pointer; }
+  .cat { background: #ddd; } .cat.on { background: #2f6f4f; color: #fff; }
+  .prod { background: #fff; min-height: 90px; box-shadow: 0 1px 3px #0003; }
+  .prod:active { background: #cfe8d9; }
+  #order { width: 380px; background: #fff; display: flex; flex-direction: column; padding: 10px; }
+  #lines { flex: 1; overflow-y: auto; }
+  .line { display: flex; align-items: center; gap: 6px; padding: 8px 0; border-bottom: 1px solid #eee; font-size: 17px; }
+  .line .n { flex: 1; } .line button { padding: 8px 14px; background: #eee; }
+  #total { font-size: 28px; font-weight: bold; margin: 10px 0; }
+  #pay { display: flex; gap: 8px; margin-bottom: 8px; }
+  #pay button { flex: 1; background: #ddd; } #pay button.on { background: #2f6f4f; color: #fff; }
+  #checkout { background: #2f6f4f; color: #fff; font-size: 24px; padding: 20px; }
+  #clear { background: #b33; color: #fff; margin-top: 8px; }
+  #msg { min-height: 24px; margin-top: 6px; }
+</style>
+</head>
+<body>
+<div id="menu"><div id="cats"></div><div id="grid"></div></div>
+<div id="order">
+  <h2 style="margin:0 0 8px">Current Order</h2>
+  <div id="lines"></div>
+  <div id="total">$0.00</div>
+  <div id="pay"><button data-m="CARD" class="on">Card</button><button data-m="CASH">Cash</button></div>
+  <button id="checkout">Charge</button>
+  <button id="clear">Clear</button>
+  <div id="msg"></div>
+</div>
+<script>
+let menu = {categories: [], products: []}, cat = null, cart = new Map(), method = 'CARD';
+const $ = id => document.getElementById(id);
+
+async function init() {
+  menu = await (await fetch('/api/menu')).json();
+  cat = menu.categories[0]?.id;
+  renderMenu(); renderCart();
+}
+function renderMenu() {
+  $('cats').innerHTML = '';
+  menu.categories.forEach(c => {
+    const b = document.createElement('button');
+    b.className = 'cat' + (c.id === cat ? ' on' : ''); b.textContent = c.name;
+    b.onclick = () => { cat = c.id; renderMenu(); };
+    $('cats').appendChild(b);
+  });
+  $('grid').innerHTML = '';
+  menu.products.filter(p => p.category === cat).forEach(p => {
+    const b = document.createElement('button');
+    b.className = 'prod'; b.innerHTML = p.name + '<br><small>$' + (+p.cost).toFixed(2) + '</small>';
+    b.onclick = () => { cart.set(p.id, (cart.get(p.id) || 0) + 1); renderCart(); };
+    $('grid').appendChild(b);
+  });
+}
+function renderCart() {
+  $('lines').innerHTML = ''; let total = 0;
+  cart.forEach((q, id) => {
+    const p = menu.products.find(x => x.id === id); total += p.cost * q;
+    const d = document.createElement('div'); d.className = 'line';
+    d.innerHTML = '<span class="n">' + p.name + '</span><button>-</button><b>' + q + '</b><button>+</button>';
+    const [minus, plus] = d.querySelectorAll('button');
+    minus.onclick = () => { q > 1 ? cart.set(id, q - 1) : cart.delete(id); renderCart(); };
+    plus.onclick = () => { cart.set(id, q + 1); renderCart(); };
+    $('lines').appendChild(d);
+  });
+  $('total').textContent = '$' + total.toFixed(2);
+}
+document.querySelectorAll('#pay button').forEach(b => b.onclick = () => {
+  method = b.dataset.m;
+  document.querySelectorAll('#pay button').forEach(x => x.classList.toggle('on', x === b));
+});
+$('clear').onclick = () => { cart.clear(); renderCart(); };
+$('checkout').onclick = async () => {
+  if (!cart.size) return;
+  const items = [...cart].map(([productId, quantity]) => ({productId, quantity}));
+  $('checkout').disabled = true;
+  try {
+    const r = await fetch('/api/orders', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({items, paymentMethod: method})});
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error);
+    $('msg').textContent = 'Order #' + j.orderId + ' placed: $' + (+j.total).toFixed(2);
+    cart.clear(); renderCart();
+  } catch (e) { $('msg').textContent = 'Error: ' + e.message; }
+  $('checkout').disabled = false;
+};
+init();
+</script>
+</body>
+</html>
