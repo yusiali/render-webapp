@@ -17,13 +17,23 @@
   #order { width: 380px; background: #fff; display: flex; flex-direction: column; padding: 10px; }
   #lines { flex: 1; overflow-y: auto; }
   .line { display: flex; align-items: center; gap: 6px; padding: 8px 0; border-bottom: 1px solid #eee; font-size: 17px; }
-  .line .n { flex: 1; } .line button { padding: 8px 14px; background: #eee; }
+  .line .n { flex: 1; cursor: pointer; } .line .sub { font-size: 13px; color: #666; }
+  .line button { padding: 8px 14px; background: #eee; }
   #total { font-size: 28px; font-weight: bold; margin: 10px 0; }
   #pay { display: flex; gap: 8px; margin-bottom: 8px; }
   #pay button { flex: 1; background: #ddd; } #pay button.on { background: #2f6f4f; color: #fff; }
   #checkout { background: #2f6f4f; color: #fff; font-size: 24px; padding: 20px; }
   #clear { background: #b33; color: #fff; margin-top: 8px; }
   #msg { min-height: 24px; margin-top: 6px; }
+  #modal { display: none; position: fixed; inset: 0; background: #0008; align-items: center; justify-content: center; }
+  #modal.show { display: flex; }
+  #card { background: #fff; border-radius: 14px; padding: 18px; width: 560px; max-width: 95vw; max-height: 95vh; overflow-y: auto; }
+  #card h3 { margin: 0 0 8px; } .lbl { margin: 12px 0 6px; font-weight: bold; }
+  .opts { display: flex; gap: 8px; flex-wrap: wrap; }
+  .opts button { background: #ddd; padding: 12px 16px; } .opts button.on { background: #2f6f4f; color: #fff; }
+  #qty { display: flex; align-items: center; gap: 16px; font-size: 24px; } #qty button { background: #eee; padding: 10px 22px; }
+  #actions { display: flex; gap: 10px; margin-top: 16px; } #actions button { flex: 1; font-size: 20px; }
+  #save { background: #2f6f4f; color: #fff; } #cancel { background: #ddd; } #remove { background: #b33; color: #fff; }
 </style>
 </head>
 <body>
@@ -37,9 +47,21 @@
   <button id="clear">Clear</button>
   <div id="msg"></div>
 </div>
+<div id="modal"><div id="card">
+  <h3 id="mname"></h3>
+  <div class="lbl">Sugar</div><div class="opts" id="sugar"></div>
+  <div class="lbl">Ice</div><div class="opts" id="ice"></div>
+  <div class="lbl">Toppings / Extras</div><div class="opts" id="extras"></div>
+  <div class="lbl">Quantity</div><div id="qty"><button id="qm">-</button><b id="qn">1</b><button id="qp">+</button></div>
+  <div id="actions"><button id="cancel">Cancel</button><button id="remove">Remove</button><button id="save">Save</button></div>
+</div></div>
 <script>
-let menu = {categories: [], products: []}, cat = null, cart = new Map(), method = 'CARD';
+const SUGAR = ['0%', '25%', '50%', '75%', '100%', '125%'];
+const ICE = ['No Ice', 'Less', 'Regular', 'Extra', 'Hot'];
+const EXTRAS = ['Boba', 'Pudding', 'Aloe Vera', 'Grass Jelly', 'Lychee Jelly', 'Cream Cap', 'Extra Shot'];
+let menu = {categories: [], products: []}, cat = null, cart = [], method = 'CARD', edit = null;
 const $ = id => document.getElementById(id);
+const key = l => [l.productId, l.sugar, l.ice, l.customizations].join('|');
 
 async function init() {
   menu = await (await fetch('/api/menu')).json();
@@ -58,38 +80,73 @@ function renderMenu() {
   menu.products.filter(p => p.category === cat).forEach(p => {
     const b = document.createElement('button');
     b.className = 'prod'; b.innerHTML = p.name + '<br><small>$' + (+p.cost).toFixed(2) + '</small>';
-    b.onclick = () => { cart.set(p.id, (cart.get(p.id) || 0) + 1); renderCart(); };
+    b.onclick = () => openModal({productId: p.id, sugar: '100%', ice: 'Regular', extras: [], quantity: 1}, -1);
     $('grid').appendChild(b);
   });
 }
 function renderCart() {
   $('lines').innerHTML = ''; let total = 0;
-  cart.forEach((q, id) => {
-    const p = menu.products.find(x => x.id === id); total += p.cost * q;
+  cart.forEach((l, idx) => {
+    const p = menu.products.find(x => x.id === l.productId); total += p.cost * l.quantity;
     const d = document.createElement('div'); d.className = 'line';
-    d.innerHTML = '<span class="n">' + p.name + '</span><button>-</button><b>' + q + '</b><button>+</button>';
+    d.innerHTML = '<span class="n"></span><button>-</button><b>' + l.quantity + '</b><button>+</button>';
+    const n = d.querySelector('.n');
+    n.innerHTML = p.name + '<div class="sub">' + [l.sugar + ' sugar', l.ice, l.customizations].filter(Boolean).join(' · ') + '</div>';
+    n.onclick = () => openModal({...l, extras: l.customizations ? l.customizations.split(', ') : []}, idx);
     const [minus, plus] = d.querySelectorAll('button');
-    minus.onclick = () => { q > 1 ? cart.set(id, q - 1) : cart.delete(id); renderCart(); };
-    plus.onclick = () => { cart.set(id, q + 1); renderCart(); };
+    minus.onclick = () => { l.quantity > 1 ? l.quantity-- : cart.splice(idx, 1); renderCart(); };
+    plus.onclick = () => { l.quantity++; renderCart(); };
     $('lines').appendChild(d);
   });
   $('total').textContent = '$' + total.toFixed(2);
 }
+function pills(id, values, selected, multi) {
+  const el = $(id); el.innerHTML = '';
+  values.forEach(v => {
+    const b = document.createElement('button'); b.textContent = v;
+    b.className = selected.includes(v) ? 'on' : '';
+    b.onclick = () => {
+      if (multi) { selected.includes(v) ? selected.splice(selected.indexOf(v), 1) : selected.push(v); }
+      else selected.splice(0, 1, v);
+      pills(id, values, selected, multi);
+    };
+    el.appendChild(b);
+  });
+}
+function openModal(l, idx) {
+  edit = {l, idx, sugar: [l.sugar], ice: [l.ice], extras: [...l.extras], quantity: l.quantity};
+  $('mname').textContent = menu.products.find(x => x.id === l.productId).name;
+  pills('sugar', SUGAR, edit.sugar, false); pills('ice', ICE, edit.ice, false); pills('extras', EXTRAS, edit.extras, true);
+  $('qn').textContent = edit.quantity;
+  $('remove').style.display = idx >= 0 ? '' : 'none';
+  $('save').textContent = idx >= 0 ? 'Update' : 'Add to Order';
+  $('modal').classList.add('show');
+}
+$('qm').onclick = () => { if (edit.quantity > 1) $('qn').textContent = --edit.quantity; };
+$('qp').onclick = () => { $('qn').textContent = ++edit.quantity; };
+$('cancel').onclick = () => $('modal').classList.remove('show');
+$('remove').onclick = () => { cart.splice(edit.idx, 1); $('modal').classList.remove('show'); renderCart(); };
+$('save').onclick = () => {
+  const line = {productId: edit.l.productId, sugar: edit.sugar[0], ice: edit.ice[0], customizations: edit.extras.join(', '), quantity: edit.quantity};
+  if (edit.idx >= 0) cart.splice(edit.idx, 1);
+  const same = cart.find(c => key(c) === key(line));
+  same ? same.quantity += line.quantity : cart.push(line);
+  $('modal').classList.remove('show'); renderCart();
+};
 document.querySelectorAll('#pay button').forEach(b => b.onclick = () => {
   method = b.dataset.m;
   document.querySelectorAll('#pay button').forEach(x => x.classList.toggle('on', x === b));
 });
-$('clear').onclick = () => { cart.clear(); renderCart(); };
+$('clear').onclick = () => { cart = []; renderCart(); };
 $('checkout').onclick = async () => {
-  if (!cart.size) return;
-  const items = [...cart].map(([productId, quantity]) => ({productId, quantity}));
+  if (!cart.length) return;
   $('checkout').disabled = true;
   try {
-    const r = await fetch('/api/orders', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({items, paymentMethod: method})});
+    const r = await fetch('/api/orders', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({items: cart, paymentMethod: method})});
     const j = await r.json();
     if (!r.ok) throw new Error(j.error);
     $('msg').textContent = 'Order #' + j.orderId + ' placed: $' + (+j.total).toFixed(2);
-    cart.clear(); renderCart();
+    cart = []; renderCart();
   } catch (e) { $('msg').textContent = 'Error: ' + e.message; }
   $('checkout').disabled = false;
 };
